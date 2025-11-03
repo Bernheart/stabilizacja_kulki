@@ -1,73 +1,115 @@
 import readline
+import sys
+from threading import Thread, Event
+
 from lib.commands.terminal_commands.help_commend import HelpCommand
 from lib.commands.terminal_commands.history_commend import HistoryCommand
 from lib.commands.terminal_commands.quit_commend import QuitCommand
 from lib.commands.terminal_commands.save_log_commend import SaveLogCommand
 from lib.commands.terminal_commands.status_commend import StatusCommand
 from lib.managers.command_context import CommandContext
-
-# --- Robot-related imports ---
+from lib.managers.device_context import DeviceContext
 from lib.commands.command import Command
-from lib.commands.robot_commands.beem_sonar import BeemSonar
-from lib.commands.robot_commands.infrared_sensor import InfraredSensor
-from lib.commands.robot_commands.move_robot import MoveRobot
-from lib.commands.robot_commands.rotate_robot import RotateRobot
-from lib.commands.robot_commands.set_robot_velocity import SetRobotVelocity
-from lib.commands.robot_commands.stop_robot import StopRobot
-from lib.managers.robot_context import RobotContext
+
+# --- New Balancer-related imports ---
+from lib.commands.balancer_commands.set_target import SetTargetCommand
+from lib.commands.balancer_commands.set_pid import SetPidCommand
+from lib.commands.balancer_commands.set_zero import SetZeroCommand
+from lib.commands.balancer_commands.test_mode import TestModeCommand
+from lib.commands.balancer_commands.run_mode import RunModeCommand
+from lib.commands.balancer_commands.stop import StopCommand
 
 
 class CommandManager:
-    def __init__(self, robot_context: RobotContext):
-        # --- Contexts ---
+    def __init__(self, device_context: DeviceContext):
         self.context = CommandContext()
-        self.robot_context = robot_context
-
-        # --- Dictionaries for commands ---
+        self.device_context = device_context
         self.commands: dict[str, Command] = {}
-        self.robot_commands: dict[str, Command] = {}
+        self.device_commands: dict[str, Command] = {}
+
+        # Telemetry thread management
+        self.telemetry_thread: Thread | None = None
+        self.stop_event = Event()
 
         # --- Register terminal commands ---
-        for cmd in [HelpCommand(self.commands, self.robot_commands), StatusCommand(),
-                    HistoryCommand(), SaveLogCommand(), QuitCommand()]:
+        term_cmds = [HelpCommand(self.commands, self.device_commands), StatusCommand(),
+                     HistoryCommand(), SaveLogCommand(), QuitCommand()]
+        for cmd in term_cmds:
             self.commands[cmd.name()] = cmd
 
-        # --- Register robot commands ---
-        for cmd in [MoveRobot(), RotateRobot(), SetRobotVelocity(),
-                    StopRobot(), BeemSonar(), InfraredSensor()]:
-            self.robot_commands[cmd.name()] = cmd
+        # --- Register device commands ---
+        # We pass 'self' (the manager) to commands that need to control the listener thread
+        dev_cmds = [SetTargetCommand(), SetPidCommand(), SetZeroCommand(),
+                    TestModeCommand(self), RunModeCommand(self), StopCommand(self)]
+        for cmd in dev_cmds:
+            self.device_commands[cmd.name()] = cmd
 
         # --- Combine all command names for autocompletion ---
-        self.all_command_names = list(self.commands.keys()) + list(self.robot_commands.keys())
+        self.all_command_names = list(self.commands.keys()) + list(self.device_commands.keys())
+        self._configure_readline()
 
-        # --- Configure readline depending on backend ---
-        if 'libedit' in readline.__doc__:
-            # macOS (libedit)
+    def _configure_readline(self):
+        if 'libedit' in readline.__doc__: # macOS
             readline.parse_and_bind("bind ^I rl_complete")
-        else:
-            # Linux / GNU readline
+        else: # Linux
             readline.parse_and_bind("tab: complete")
-
         readline.set_completer(self.completer)
         readline.set_completer_delims(" \t\n")
-        readline.parse_and_bind('"\\e[A": history-search-backward')  # ↑
-        readline.parse_and_bind('"\\e[B": history-search-forward')   # ↓
 
-    # ---- Autocomplete ----
     def completer(self, text, state):
-        """Autocomplete both terminal and robot commands."""
         options = [cmd for cmd in self.all_command_names if cmd.startswith(text)]
-        if state < len(options):
-            return options[state]
-        return None
+        return options[state] if state < len(options) else None
+
+    # ---- Thread Management ----
+    
+    def start_listener_thread(self):
+        """Starts the telemetry listener thread if not already running."""
+        if self.telemetry_thread and self.telemetry_thread.is_alive():
+            return 
+        self.stop_event.clear()
+        self.telemetry_thread = Thread(
+            target=self.device_context.comm.listen_for_data,
+            args=(self.stop_event,),
+            daemon=True
+        )
+        self.telemetry_thread.start()
+
+    def stop_listener_thread(self):
+        """Stops the telemetry listener thread."""
+        if self.telemetry_thread and self.telemetry_thread.is_alive():
+            self.stop_event.set()
+            self.telemetry_thread.join(timeout=1.0)
+        self.telemetry_thread = None
+        self.stop_event.clear()
+
+    def cleanup(self):
+        """Stops all device activity and threads before exit."""
+        print("[INFO] Cleaning up resources...")
+        self.stop_listener_thread()
+        # Send a final stop command to make sure
+        try:
+            self.device_context.comm.send_command("D", 0)
+        except Exception:
+            pass # Ignore errors on exit
 
     # ---- Main loop ----
+    
     def run(self):
-        print("Command system ready. Type 'help' for available commands.")
+        print("Ball Balancer Interface. Type 'help' for commands.")
+        # Start a general listener thread for any spontaneous <INFO> messages
+        # self.start_listener_thread() 
+        # Note: Disabled for this project, as Arduino only talks after a command.
+
         while self.context.running:
             try:
                 user_input = input("> ").strip()
                 if not user_input:
+                    # Pressing Enter on an empty line is the signal to stop TEST mode
+                    if self.telemetry_thread and self.telemetry_thread.is_alive():
+                        print("[INFO] Stopping test mode...")
+                        self.stop_listener_thread()
+                        # Send stop command to Arduino
+                        self.device_context.comm.send_command("D", 0)
                     continue
 
                 self.context.history.append(user_input)
@@ -76,21 +118,14 @@ class CommandManager:
                 parts = user_input.split()
                 cmd_name, args = parts[0], parts[1:]
 
-                # --- Check in terminal commands ---
                 if cmd_name in self.commands:
-                    cmd = self.commands[cmd_name]
-                    cmd.execute(self.context, *args)
-
-                # --- Check in robot commands ---
-                elif cmd_name in self.robot_commands:
-                    cmd = self.robot_commands[cmd_name]
-                    cmd.execute(self.robot_context, *args)
-
+                    self.commands[cmd_name].execute(self.context, *args)
+                elif cmd_name in self.device_commands:
+                    self.device_commands[cmd_name].execute(self.device_context, *args)
                 else:
-                    print(f"Unknown command: {cmd_name}. Type 'help' for available commands.")
+                    print(f"Unknown command: {cmd_name}. Type 'help' for commands.")
 
             except (EOFError, KeyboardInterrupt):
-                print("\nExiting...")
-                break
+                self.context.running = False
             except Exception as e:
-                print(f"Error: {e}")
+                print(f"[ERROR] Main loop: {e}")

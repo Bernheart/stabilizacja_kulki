@@ -1,34 +1,32 @@
 import sys
 from lib.managers.command_manager import CommandManager
-from lib.managers.robot_context import RobotContext
+from lib.managers.device_context import DeviceContext
 from lib.config.app_config import AppConfig
 
-
 def main():
-    print("=== PC ↔ Arduino Robot Control Interface ===")
+    print("=== Project 2: Ball Balancer Interface ===")
 
     # --- Load config ---
     try:
         config = AppConfig()
-        port = config.serial.port
-        baudrate = config.serial.baudrate
-        timeout = config.serial.timeout
     except Exception as e:
         print(f"[ERROR] Failed to load configuration: {e}")
         sys.exit(1)
 
-    # --- Initialize Robot Context ---
+    # --- Initialize Device Context ---
     try:
-        robot_context = RobotContext(port, baudrate)
-        print(f"[INFO] Connected to {port} @ {baudrate} baud.")
+        # Pass timeout from config
+        device_context = DeviceContext(
+            config.serial.port,
+            config.serial.baudrate,
+            config.serial.timeout
+        )
     except Exception as e:
-        print(f"[ERROR] Could not open serial port '{port}': {e}")
-        print("Tip: use socat virtual ports to emulate Arduino for testing.")
+        print(f"[ERROR] Could not open serial port '{config.serial.port}': {e}")
         sys.exit(1)
 
     # --- Initialize Command Manager ---
-    # Inject the robot context so robot commands can use it
-    cmd_manager = CommandManager(robot_context)
+    cmd_manager = CommandManager(device_context)
 
     # --- Run interactive terminal ---
     try:
@@ -38,7 +36,9 @@ def main():
     finally:
         print("[INFO] Closing connection...")
         try:
-            robot_context.comm.close()
+            # Ask manager to stop threads and send stop command
+            cmd_manager.cleanup()
+            device_context.comm.close()
         except Exception:
             pass
         print("[INFO] Exiting system. Goodbye!")
