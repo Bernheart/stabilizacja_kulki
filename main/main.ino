@@ -222,22 +222,44 @@ void finishRunMode() {
 }
 
 
-// ======================== PARSER (z P1) =========================
+// ======================== PARSER (z P1, POPRAWIONY) =========================
 
 void handleFrame(String frame) {
-  int sep1 = frame.indexOf('|');
-  int sep2 = frame.lastIndexOf('|');
+  int sep1 = frame.indexOf('|');      // First separator (after CMD)
+  int sep2 = frame.lastIndexOf('|');  // Last separator (before CHK)
 
-  if (sep1 == -1 || sep2 == -1 || sep2 <= sep1) {
+  // --- NOWA, POPRAWIONA LOGIKA PARSOWANIA ---
+  
+  // Musi być co najmniej jeden separator
+  if (sep1 == -1) {
     Serial.println("<NACK|BAD_FORMAT>");
     return;
   }
 
-  String cmd = frame.substring(0, sep1);
-  String param = frame.substring(sep1 + 1, sep2);
-  String checksum = frame.substring(sep2 + 1);
+  String cmd;
+  String param = ""; // Domyślnie pusty parametr
+  String checksum;
+  String data_for_chk; // Ciąg do obliczenia sumy kontrolnej
 
-  if (!validateChecksum(frame, checksum)) {
+  if (sep1 == sep2) {
+    // Brak parametru, format: <CMD|CHECKSUM>
+    // frame = "R|82"
+    cmd = frame.substring(0, sep1);       // "R"
+    checksum = frame.substring(sep1 + 1); // "82"
+    data_for_chk = cmd;                   // Suma kontrolna liczona z "R"
+  } else {
+    // Jest parametr, format: <CMD|PARAM|CHECKSUM>
+    // frame = "T|15.0|22"
+    cmd = frame.substring(0, sep1);             // "T"
+    param = frame.substring(sep1 + 1, sep2);    // "15.0"
+    checksum = frame.substring(sep2 + 1);       // "22"
+    data_for_chk = cmd + "|" + param;           // Suma liczona z "T|15.0"
+  }
+  
+  // --- KONIEC NOWEJ LOGIKI ---
+
+  // Walidacja sumy kontrolnej
+  if (!validateChecksum(data_for_chk, checksum)) {
     Serial.println("<NACK|" + cmd + "|CHK_ERR>");
     return;
   }
@@ -292,16 +314,32 @@ void handleFrame(String frame) {
       }
       break;
 
-    // 'R' | (dowolny) | CHK -> Tryb ZALICZENIOWY (RUN)
+    // 'R' | (brak) | CHK -> Tryb ZALICZENIOWY (RUN)
     case 'R':
       startRunMode();
-      Serial.println("<ACK|R>"); // Info o wyniku przyjdzie jako <INFO|MAE|...>
+      // Wiadomość <ACK> jest wysyłana w startRunMode() lub tuż po
+      Serial.println("<ACK|R|RUN_STARTED>"); // Wyraźne potwierdzenie
       break;
 
     default:
       Serial.println("<NACK|" + cmd + "|UNKNOWN_CMD>");
       return;
   }
+}
+
+// ===================== WALIDACJA SUMY KONTROLNEJ (POPRAWIONA) =====================
+/**
+ * Waliduje sumę kontrolną
+ * @param data - Ciąg danych BEZ separatora sumy i sumy (np. "R" lub "T|15.0")
+ * @param given - Otrzymana suma kontrolna jako String (np. "82")
+ */
+bool validateChecksum(String data, String given) {
+  int sum = 0;
+  for (unsigned int i = 0; i < data.length(); i++) {
+    sum += data[i];
+  }
+  int checksum = sum % 256;
+  return checksum == given.toInt();
 }
 
 // ===================== WALIDACJA SUMY KONTROLNEJ (z P1) =====================
