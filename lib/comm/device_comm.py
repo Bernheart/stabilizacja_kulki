@@ -9,8 +9,8 @@ class DeviceComm:
         if not self.arduino.is_open:
             raise serial.SerialException(f"Could not open port {port}")
             
-        time.sleep(1.5) # Give Arduino time to reset
-        self.arduino.flushInput()
+        time.sleep(2) # Give Arduino time to reset
+        # self.arduino.flushInput()
         self.wait_for_ready()
 
     def wait_for_ready(self, timeout=5):

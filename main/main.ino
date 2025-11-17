@@ -12,11 +12,12 @@
 const unsigned long LOOP_INTERVAL = 120; // Pętla PID co 100 ms (spełnia <= 200 ms)
 
 // ======================= ZMIENNE PID ========================
+// pid 2 0.7 0.9
 float kp = 0.0;
 float ki = 0.0;
 float kd = 0.0;
 
-float distance_point = 28.0; // Wartość zadana (cm)
+float distance_point = 26.0; // Wartość zadana (cm)
 float integral = 0.0;
 float previousError = 0.0;
 
@@ -28,8 +29,8 @@ const float INTEGRAL_MAX = 200.0;  // Limit anti-windup
 
 // ====================== ZMIENNE SYSTEMOWE ======================
 Servo myservo;
-int reset_servo = 90; // Pozycja początkowa serwa
-int servo_zero = 80; // Pozycja "zero" (poziomo) serwa
+int reset_servo = 75; // Pozycja początkowa serwa
+int servo_zero = 70; // Pozycja "zero" (poziomo) serwa
 unsigned long lastPidTime = 0;
 float distance;
 
@@ -75,7 +76,7 @@ void loop() {
     distance = get_dist(100);
     lastPidTime = millis();
     
-    updatePID(dt_seconds);
+    updatePID();
   }
   
   // 3. Obsługa maszyny stanów trybu zaliczeniowego
@@ -143,6 +144,8 @@ void updatePID() {
     Serial.print("|");
     Serial.print(proportional);
     Serial.print("|");
+     Serial.print(integral);
+    Serial.print("|");
     Serial.print(output);
     Serial.println(">");
   }
@@ -150,7 +153,7 @@ void updatePID() {
   previousError = proportional;
   // 10. Sterowanie serwem (z ograniczeniami)
   float servo_signal = servo_zero + output;
-  float servo_signal = constrain(servo_signal, servo_zero + OUTPUT_MIN, servo_zero + OUTPUT_MAX);
+  servo_signal = constrain(servo_signal, servo_zero + OUTPUT_MIN, servo_zero + OUTPUT_MAX);
   myservo.write(servo_signal);
 }
 
@@ -208,7 +211,8 @@ void finishRunMode() {
 
   // Wymagany format wyjścia
   Serial.print("<INFO|MAE|");
-  Serial.println(mae, 2); // 2 miejsca po przecinku
+  Serial.print(mae, 2); // 2 miejsca po przecinku
+  Serial.print(">");
 }
 
 

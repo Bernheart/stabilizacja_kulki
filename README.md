@@ -17,3 +17,7 @@ python -m lib.main
 socat -d -d pty,raw,echo=0 pty,raw,echo=0
 # change ports in config and fake_arduino
 python lib/test/fake_arduino.py
+
+# best
+pid 2 0.7 0.9
+[RESULT] <INFO|MAE|0.14> (in cm)
