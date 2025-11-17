@@ -1,4 +1,8 @@
-import readline
+try:
+    import readline
+except ImportError:
+    import pyreadline3 as readline
+
 import sys
 from threading import Thread, Event
 

@@ -2,9 +2,9 @@ from lib.commands.command import Command
 
 
 class HelpCommand(Command):
-    def __init__(self, commands: dict[str, Command], robot_commands: dict[str, Command]):
+    def __init__(self, commands: dict[str, Command], device_commands: dict[str, Command]):
         self.commands = commands
-        self.robot_commands = robot_commands
+        self.device_commands = device_commands
 
     def name(self) -> str:
         return "help"
@@ -12,7 +12,7 @@ class HelpCommand(Command):
     def execute(self, context, *args, **kwargs):
         if args:
             cmd_name = args[0]
-            cmd = self.commands.get(cmd_name) or self.robot_commands.get(cmd_name)
+            cmd = self.commands.get(cmd_name) or self.device_commands.get(cmd_name)
             if cmd:
                 print(cmd.help())
             else:
@@ -21,8 +21,8 @@ class HelpCommand(Command):
             print("Available commands:")
             for cmd in self.commands.values():
                 print(f"- {cmd.name()}: {cmd.help()}")
-            print("Robot commands:") 
-            for cmd in self.robot_commands.values():
+            print("Device commands:") 
+            for cmd in self.device_commands.values():
                 print(f"- {cmd.name()}: {cmd.help()}")
 
     def help(self) -> str:

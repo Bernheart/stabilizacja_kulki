@@ -1,5 +1,5 @@
 serial:
-  port: "/dev/ttys037"
+  port: "COM22"
   baudrate: 9600
   timeout: 1
 

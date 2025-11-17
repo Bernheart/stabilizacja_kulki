@@ -3,7 +3,8 @@
  * Zintegrowany kod (P1 Komunikacja + P2 PID)
  */
 
-// #include <Servo.h>
+#include <Wire.h>
+#include <Servo.h>
 
 // ======================== KONFIGURACJA =========================
 #define SERVO_PIN 9
@@ -15,7 +16,7 @@ float kp = 0.0;
 float ki = 0.0;
 float kd = 0.0;
 
-float distance_point = 15.0; // Wartość zadana (cm)
+float distance_point = 26.0; // Wartość zadana (cm)
 float integral = 0.0;
 float previousError = 0.0;
 
@@ -28,7 +29,7 @@ const float INTEGRAL_MAX = 200.0;  // Limit anti-windup
 // ====================== ZMIENNE SYSTEMOWE ======================
 Servo myservo;
 int reset_servo = 90; // Pozycja początkowa serwa
-int servo_zero = 0; // Pozycja "zero" (poziomo) serwa
+int servo_zero = 85; // Pozycja "zero" (poziomo) serwa
 unsigned long lastPidTime = 0;
 
 // Stany pracy
@@ -116,31 +117,27 @@ float get_dist(int n) {
  */
 void updatePID(float dt) {
   // 1. Pomiar (Wejście)
-  float distance = get_dist(10); // [cm]
-
-  // 2. Obliczenie uchybu
-  // Używamy logiki ze szkieletu: uchyb = (pomiar - zadana)
-  float error = distance - distance_point;
+  float distance = get_dist(100); // [cm]
 
   // 3. Obliczenie członu P (Proporcjonalny)
-  float proportional = kp * error;
+  float proportional = distance - distance_point;
 
   // 4. Obliczenie członu I (Całkujący) z Anti-Windup
-  integral = integral + (ki * error * dt);
+  integral = integral + proportional *  0/1;
   integral = constrain(integral, INTEGRAL_MIN, INTEGRAL_MAX);
 
   // 5. Obliczenie członu D (Różniczkujący)
-  float derivative = kd * (error - previousError) / dt;
+  float derivative = (proportional-previousError)/0.1;
 
   // 6. Sygnał sterujący (Wyjście)
-  float output = proportional + integral + derivative;
+  float output = proportional * kp + integral * ki + derivative * kd;
   
   // 7. Zapisanie stanu
-  previousError = error;
+  previousError = proportional;
 
   // 8. Logika trybu zaliczeniowego (zliczanie błędu w Fazie 2)
   if (current_run_state == PHASE_2) {
-    error_sum += abs(error);
+    error_sum += abs(proportional);
     error_count++;
   }
 
@@ -152,7 +149,7 @@ void updatePID(float dt) {
     Serial.print("|");
     Serial.print(distance);
     Serial.print("|");
-    Serial.print(error);
+    Serial.print(proportional);
     Serial.print("|");
     Serial.print(output);
     Serial.println(">");
