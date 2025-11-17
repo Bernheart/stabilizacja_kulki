@@ -27,9 +27,10 @@ const float INTEGRAL_MAX = 200.0;  // Limit anti-windup
 
 // ====================== ZMIENNE SYSTEMOWE ======================
 Servo myservo;
-int reset_servo = 90; // Pozycja początkowa serwa
+int reset_servo = 95; // Pozycja początkowa serwa
 int servo_zero = 0; // Pozycja "zero" (poziomo) serwa
 unsigned long lastPidTime = 0;
+float distance;
 
 // Stany pracy
 bool pid_enabled = false;
@@ -69,8 +70,9 @@ void loop() {
   // 2. Obsługa pętli sterowania (jeśli włączona)
   unsigned long currentMillis = millis();
   if (pid_enabled && (currentMillis - lastPidTime >= LOOP_INTERVAL)) {
-    float dt_seconds = (currentMillis - lastPidTime) / 1000.0;
-    lastPidTime = currentMillis;
+    // float dt_seconds = (currentMillis - lastPidTime) / 1000.0;
+    distance = get_dist(100);
+    lastPidTime = millis();
     
     updatePID(dt_seconds);
   }
@@ -114,33 +116,18 @@ float get_dist(int n) {
 /**
  * Wykonuje jeden krok regulatora PID.
  */
-void updatePID(float dt) {
-  // 1. Pomiar (Wejście)
-  float distance = get_dist(10); // [cm]
+void updatePID() {
+  float proportional = distance - distance_point;
 
-  // 2. Obliczenie uchybu
-  // Używamy logiki ze szkieletu: uchyb = (pomiar - zadana)
-  float error = distance - distance_point;
+  integral = integral + proportional * 0.1;
 
-  // 3. Obliczenie członu P (Proporcjonalny)
-  float proportional = kp * error;
+  float derivative = (proportional - previousError) / 0.1;
 
-  // 4. Obliczenie członu I (Całkujący) z Anti-Windup
-  integral = integral + (ki * error * dt);
-  integral = constrain(integral, INTEGRAL_MIN, INTEGRAL_MAX);
-
-  // 5. Obliczenie członu D (Różniczkujący)
-  float derivative = kd * (error - previousError) / dt;
-
-  // 6. Sygnał sterujący (Wyjście)
-  float output = proportional + integral + derivative;
-  
-  // 7. Zapisanie stanu
-  previousError = error;
+  float output = kp * proportional + ki * integral + kd * derivative;
 
   // 8. Logika trybu zaliczeniowego (zliczanie błędu w Fazie 2)
   if (current_run_state == PHASE_2) {
-    error_sum += abs(error);
+    error_sum += abs(proportional);
     error_count++;
   }
 
@@ -152,15 +139,16 @@ void updatePID(float dt) {
     Serial.print("|");
     Serial.print(distance);
     Serial.print("|");
-    Serial.print(error);
+    Serial.print(proportional);
     Serial.print("|");
     Serial.print(output);
     Serial.println(">");
   }
 
+  previousError = proportional;
   // 10. Sterowanie serwem (z ograniczeniami)
   float servo_signal = servo_zero + output;
-  servo_signal = constrain(servo_signal, servo_zero + OUTPUT_MIN, servo_zero + OUTPUT_MAX);
+  float servo_signal = constrain(servo_signal, servo_zero + OUTPUT_MIN, servo_zero + OUTPUT_MAX);
   myservo.write(servo_signal);
 }
 
